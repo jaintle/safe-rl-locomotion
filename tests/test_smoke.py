@@ -16,7 +16,7 @@ training pipeline but do not check learning quality.
 Status:
     - test_smoke_env: ACTIVE.
     - test_ppo_smoke_train: ACTIVE (Phase 2 — PPO implemented).
-    - test_cppo_smoke_train: STUB (Phase 3 — C-PPO not yet implemented).
+    - test_cppo_smoke_train: ACTIVE (Phase 3 — C-PPO implemented).
 """
 
 from __future__ import annotations
@@ -98,16 +98,17 @@ def test_ppo_smoke_train(tmp_path: pathlib.Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 3. C-PPO smoke train (stub)
+# 3. C-PPO smoke train
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="C-PPO training loop not yet implemented (scaffold phase).")
 def test_cppo_smoke_train(tmp_path: pathlib.Path) -> None:
     """
     Train C-PPO for 5 000 steps and verify artefacts are written.
 
-    Same checks as PPO plus verifies that the lambda column appears in
-    metrics.csv.
+    Checks:
+        - <save_dir>/metrics.csv exists and is non-empty.
+        - At least one file in <save_dir>/checkpoints/.
+        - The lambda column appears in metrics.csv header.
     """
     result = subprocess.run(
         [
@@ -129,8 +130,13 @@ def test_cppo_smoke_train(tmp_path: pathlib.Path) -> None:
     )
     metrics_csv = tmp_path / "metrics.csv"
     assert metrics_csv.exists(), "metrics.csv not found after C-PPO smoke train."
+    assert metrics_csv.stat().st_size > 0, "metrics.csv is empty."
 
     import csv
     with open(metrics_csv) as f:
         header = next(csv.reader(f))
     assert "lambda" in header, f"'lambda' column missing from metrics.csv. Header: {header}"
+
+    checkpoints_dir = tmp_path / "checkpoints"
+    ckpts = list(checkpoints_dir.glob("*.pt")) if checkpoints_dir.exists() else []
+    assert len(ckpts) >= 1, "No checkpoint files found after C-PPO smoke train."

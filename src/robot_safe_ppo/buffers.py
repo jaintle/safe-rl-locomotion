@@ -6,8 +6,10 @@ Rollout buffer used by both PPO and C-PPO training loops.
 Responsibilities:
     - Store (obs, action, reward, done, log_prob, value) tuples collected
       during environment interaction.
-    - For C-PPO: additionally store per-step cost signals.
-    - Compute Generalised Advantage Estimates (GAE-λ) and discounted returns.
+    - For C-PPO: additionally store per-step costs, cost-critic values,
+      cost advantages, and cost returns.
+    - Compute Generalised Advantage Estimates (GAE-λ) for both the reward
+      stream and (optionally) the cost stream.
     - Provide shuffled minibatch iterators for the PPO update epochs.
 
 Design decisions:
@@ -15,10 +17,9 @@ Design decisions:
     - GAE is computed in-place after rollout collection is complete.
     - Buffer is reset at the start of each new rollout.
     - ``done[t] = True`` means the episode *terminated or was truncated* at
-      step t, so ``V(s_{t+1})`` should not be bootstrapped (i.e. the
-      non-terminal mask is 0 for that step).
+      step t, so ``V(s_{t+1})`` should not be bootstrapped.
 
-GAE formula (Schulman et al., 2016):
+GAE formula (Schulman et al., 2016) applied to both reward and cost streams:
     δ_t  = r_t + γ · V(s_{t+1}) · (1 − d_t) − V(s_t)
     Â_t  = δ_t + γλ · (1 − d_t) · Â_{t+1}
 """
@@ -34,13 +35,23 @@ class RolloutBuffer:
     """
     Fixed-size on-policy rollout buffer for PPO / C-PPO.
 
+    When ``store_costs=True`` (C-PPO mode), the buffer also allocates:
+        - ``costs``           : per-step cost signal c_t.
+        - ``cost_values``     : cost-critic estimates V_C(s_t).
+        - ``cost_advantages`` : GAE-λ over the cost stream.
+        - ``cost_returns``    : cost_advantages + cost_values (critic targets).
+
+    Both ``compute_advantages`` (reward stream) and
+    ``compute_cost_advantages`` (cost stream) must be called before
+    iterating over minibatches in C-PPO.
+
     Args:
         buffer_size : Number of environment steps per rollout.
         obs_dim     : Observation space dimensionality.
         act_dim     : Action space dimensionality.
-        gamma       : Discount factor γ.
-        gae_lambda  : GAE λ parameter (0 → TD(0), 1 → Monte-Carlo).
-        store_costs : If True, allocate a per-step cost array (for C-PPO).
+        gamma       : Discount factor γ (shared for reward and cost streams).
+        gae_lambda  : GAE λ (shared for reward and cost streams).
+        store_costs : If True, allocate cost arrays (for C-PPO).
     """
 
     def __init__(self, buffer_size: int, obs_dim: int, act_dim: int,
@@ -52,7 +63,6 @@ class RolloutBuffer:
         self.gamma = gamma
         self.gae_lambda = gae_lambda
         self.store_costs = store_costs
-        # Allocated once; reset() zeroes and resets pointer.
         self._alloc()
         self.reset()
 
@@ -63,16 +73,21 @@ class RolloutBuffer:
     def _alloc(self) -> None:
         """Allocate numpy arrays for all buffer fields."""
         n = self.buffer_size
+        # Core fields (PPO + C-PPO)
         self.obs = np.zeros((n, self.obs_dim), dtype=np.float32)
         self.actions = np.zeros((n, self.act_dim), dtype=np.float32)
         self.rewards = np.zeros(n, dtype=np.float32)
-        self.dones = np.zeros(n, dtype=np.float32)      # float for arithmetic
+        self.dones = np.zeros(n, dtype=np.float32)
         self.log_probs = np.zeros(n, dtype=np.float32)
         self.values = np.zeros(n, dtype=np.float32)
         self.advantages = np.zeros(n, dtype=np.float32)
         self.returns = np.zeros(n, dtype=np.float32)
+        # Cost fields (C-PPO only)
         if self.store_costs:
             self.costs = np.zeros(n, dtype=np.float32)
+            self.cost_values = np.zeros(n, dtype=np.float32)
+            self.cost_advantages = np.zeros(n, dtype=np.float32)
+            self.cost_returns = np.zeros(n, dtype=np.float32)
 
     # ------------------------------------------------------------------
     # Public interface
@@ -90,22 +105,26 @@ class RolloutBuffer:
         self.returns[:] = 0.0
         if self.store_costs:
             self.costs[:] = 0.0
+            self.cost_values[:] = 0.0
+            self.cost_advantages[:] = 0.0
+            self.cost_returns[:] = 0.0
         self.ptr = 0
 
     def add(self, obs: np.ndarray, action: np.ndarray, reward: float,
             done: bool, log_prob: float, value: float,
-            cost: float = 0.0) -> None:
+            cost: float = 0.0, cost_value: float = 0.0) -> None:
         """
         Store one transition at the current write position.
 
         Args:
-            obs      : Observation array, shape (obs_dim,).
-            action   : Action array, shape (act_dim,).
-            reward   : Scalar reward for this step.
-            done     : True if the episode terminated or was truncated.
-            log_prob : Log-probability of ``action`` under the current policy.
-            value    : V(obs) estimate from the critic.
-            cost     : Per-step safety cost (C-PPO only; ignored otherwise).
+            obs        : Observation array, shape (obs_dim,).
+            action     : Action array, shape (act_dim,).
+            reward     : Scalar reward for this step.
+            done       : True if the episode terminated or was truncated.
+            log_prob   : Log-probability of ``action`` under the current policy.
+            value      : Reward-critic estimate V(s).
+            cost       : Per-step safety cost (C-PPO only; ignored otherwise).
+            cost_value : Cost-critic estimate V_C(s) (C-PPO only).
         """
         assert self.ptr < self.buffer_size, (
             f"Buffer overflow: ptr={self.ptr} >= buffer_size={self.buffer_size}. "
@@ -119,46 +138,73 @@ class RolloutBuffer:
         self.values[self.ptr] = value
         if self.store_costs:
             self.costs[self.ptr] = cost
+            self.cost_values[self.ptr] = cost_value
         self.ptr += 1
 
     def compute_advantages(self, last_value: float) -> None:
         """
-        Compute GAE-λ advantages and discounted returns in-place.
+        Compute GAE-λ reward advantages and discounted returns in-place.
 
         Must be called *once* after the rollout is fully collected and
         *before* iterating over minibatches.
 
         Args:
-            last_value: Critic's estimate V(s) for the state immediately
-                        *after* the last stored transition.  Used to
-                        bootstrap the return for non-terminal rollout ends.
+            last_value: Reward-critic estimate V(s) for the state immediately
+                        *after* the last stored transition.
         """
         gae = 0.0
         for t in reversed(range(self.buffer_size)):
-            # Non-terminal mask: 0 if episode ended at step t, else 1.
             non_terminal = 1.0 - self.dones[t]
-
-            # Bootstrap from last_value at the rollout boundary;
-            # for all other steps use the stored critic value.
             next_val = last_value if t == self.buffer_size - 1 else self.values[t + 1]
-
-            # TD residual
             delta = self.rewards[t] + self.gamma * next_val * non_terminal - self.values[t]
-
-            # GAE recursion
             gae = delta + self.gamma * self.gae_lambda * non_terminal * gae
             self.advantages[t] = gae
-
-        # Returns = advantages + value baseline (used as regression targets)
         self.returns[:] = self.advantages + self.values
+
+    def compute_cost_advantages(self, last_cost_value: float) -> None:
+        """
+        Compute GAE-λ cost advantages and cost returns in-place (C-PPO only).
+
+        Applies the identical GAE formula to the cost stream using
+        ``cost_values`` as the cost-critic baseline.
+
+        Must be called *after* ``compute_advantages`` and *before* iterating
+        over minibatches.
+
+        Args:
+            last_cost_value: Cost-critic estimate V_C(s) for the state
+                             immediately after the last stored transition.
+
+        Raises:
+            RuntimeError: If called when ``store_costs=False``.
+        """
+        if not self.store_costs:
+            raise RuntimeError(
+                "compute_cost_advantages requires store_costs=True."
+            )
+        gae = 0.0
+        for t in reversed(range(self.buffer_size)):
+            non_terminal = 1.0 - self.dones[t]
+            next_cval = (
+                last_cost_value
+                if t == self.buffer_size - 1
+                else self.cost_values[t + 1]
+            )
+            delta = (
+                self.costs[t]
+                + self.gamma * next_cval * non_terminal
+                - self.cost_values[t]
+            )
+            gae = delta + self.gamma * self.gae_lambda * non_terminal * gae
+            self.cost_advantages[t] = gae
+        self.cost_returns[:] = self.cost_advantages + self.cost_values
 
     def get_minibatches(self, batch_size: int) -> Iterator[dict]:
         """
         Yield randomly shuffled minibatches over the full buffer.
 
-        The advantages stored here are *raw* (not yet normalised); normalisation
-        is applied inside the PPO update loop so that statistics are computed
-        over the full buffer rather than per-minibatch.
+        Advantages are yielded *raw* (not normalised); normalisation is
+        applied inside the agent's update loop over the full buffer.
 
         Args:
             batch_size: Number of transitions per minibatch.
@@ -166,8 +212,10 @@ class RolloutBuffer:
         Yields:
             Dict with keys:
                 ``obs``, ``actions``, ``log_probs_old``, ``advantages``,
-                ``returns`` (and ``costs`` if store_costs=True).
-                All values are numpy arrays.
+                ``returns``
+                and, when ``store_costs=True``:
+                ``costs``, ``cost_advantages``, ``cost_returns``.
+                All values are numpy float32 arrays.
         """
         indices = np.random.permutation(self.buffer_size)
         for start in range(0, self.buffer_size, batch_size):
@@ -181,4 +229,6 @@ class RolloutBuffer:
             }
             if self.store_costs:
                 batch["costs"] = self.costs[idx]
+                batch["cost_advantages"] = self.cost_advantages[idx]
+                batch["cost_returns"] = self.cost_returns[idx]
             yield batch

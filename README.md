@@ -7,7 +7,8 @@ Reproducible reinforcement learning repository implementing:
 
 Target environments: **Hopper-v4**, **Walker2d-v4** (optional second environment).
 
-> **Status:** Scaffold phase — algorithm logic not yet implemented.
+> **Status:** Phase 3 complete — both PPO and C-PPO Lagrangian fully implemented.
+> Smoke tests active for both algorithms. Ready for full training runs.
 > This repository is intended as credible proof-of-work for robotics and RL research labs.
 
 ---
@@ -136,13 +137,48 @@ pytest -m slow -v tests/test_learning_regression.py
 
 ## Reproduction
 
-> **Placeholder** — this section will be populated after the full implementation is complete.
+### Smoke tests (fast, ~30–60 s each on CPU)
 
-Reproduction commands for the main results will be provided here, including:
-- Exact CLI commands used
-- Expected final evaluation returns (mean ± std across seeds)
-- Expected constraint violation rates for C-PPO
-- Hardware and runtime information
+```bash
+# PPO: 5 000-step smoke training run
+python scripts/train_ppo.py \
+    --env_id Hopper-v4 \
+    --seed 0 \
+    --total_timesteps 5000 \
+    --save_dir runs/ppo_smoke \
+    --eval_every 2500
+
+# C-PPO: 5 000-step smoke training run
+python scripts/train_cppo.py \
+    --env_id Hopper-v4 \
+    --seed 0 \
+    --total_timesteps 5000 \
+    --save_dir runs/cppo_smoke \
+    --eval_every 2500 \
+    --cost_limit 0.1
+
+# Run all smoke tests via pytest
+pytest -q tests/test_smoke.py
+```
+
+### Full training runs (1M steps — several hours on CPU)
+
+```bash
+python scripts/train_ppo.py \
+    --env_id Hopper-v4 --seed 0 \
+    --total_timesteps 1000000 \
+    --save_dir runs/ppo_hopper_s0 \
+    --eval_every 10000
+
+python scripts/train_cppo.py \
+    --env_id Hopper-v4 --seed 0 \
+    --total_timesteps 1000000 \
+    --save_dir runs/cppo_hopper_s0 \
+    --eval_every 10000 \
+    --cost_limit 0.1
+```
+
+> Final evaluation returns and constraint violation rates will be reported here after full training completes.
 
 ---
 

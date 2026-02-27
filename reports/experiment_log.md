@@ -186,3 +186,81 @@ files import cleanly (modules with `NotImplementedError` bodies are expected).
 - CPU-only; no GPU determinism flags set.
 
 ---
+
+## Entry 003
+
+**Date:** 2026-02-28
+**Task:** Phase 3 — C-PPO Lagrangian implementation
+**Environment:** Hopper-v4 (target; smoke test pending on user's machine)
+**Timesteps:** 5 000 (smoke test budget)
+**Seed(s):** 0
+
+### Observations
+
+**What was done:**
+- Extended `buffers.py` to support cost stream:
+  - Added `cost_values`, `cost_advantages`, `cost_returns` pre-allocated arrays (when `store_costs=True`).
+  - Added `compute_cost_advantages(last_cost_value)` applying the identical GAE formula to the cost stream.
+  - Updated `add()` to accept optional `cost_value` parameter (ignored when `store_costs=False`).
+  - Updated `get_minibatches()` to yield `cost_advantages` and `cost_returns` when `store_costs=True`.
+- Implemented `cppo_lagrangian.py` in full (replaced stubs):
+  - `cost_action_magnitude(obs, action, next_obs, threshold=0.8)`: binary indicator, returns 1.0 when mean|action| > threshold.
+  - `cost_torso_angle(obs, action, next_obs, threshold=0.2)`: binary indicator, returns 1.0 when |obs[1]| > threshold (Hopper-v4).
+  - `get_cost_fn(name, cfg)`: factory returning a bound callable from config.
+  - `LagrangianMultiplier`: dual ascent update `λ ← clip(λ + α_λ·(avg_cost − d), 0, λ_max)`.
+  - `CPPOLagrangianAgent(PPOAgent)`: inherits PPO backbone; adds cost critic V_C(s); rebuilds optimizer to include cost critic; combined policy loss `L = L_reward_ppo + λ·L_cost_ppo`; updates λ once per rollout after all gradient epochs.
+  - `_save_cppo_checkpoint()`: saves actor, critic, cost_critic, log_std, optimizer, lambda.
+- Implemented `scripts/train_cppo.py` in full (replaced stub exit):
+  - Full training loop: rollout collection with per-step cost evaluation, reward + cost GAE computation, LR annealing, `agent.update(buffer, avg_episode_cost)`, periodic eval (return + cost), checkpoint saving.
+  - CSV fieldnames: `step, episode_return, episode_cost, episode_length, eval_return_mean, eval_return_std, eval_cost_mean, eval_cost_std, lambda, policy_loss, cost_policy_loss, value_loss, cost_value_loss, entropy, approx_kl, clip_fraction`.
+  - Lambda update uses mean completed episode cost from the rollout; falls back to mean per-step cost if no episode completed during the rollout.
+- Updated `tests/test_smoke.py`: removed `@pytest.mark.skip` from `test_cppo_smoke_train`; added checkpoint existence assertion to match the PPO smoke test; updated docstring status.
+- Updated `README.md`: replaced scaffold status with Phase 3 complete status; added smoke and full training reproduction commands.
+
+**Implementation decisions:**
+
+`buffers.py` extension:
+- `store_costs=False` default preserved; buffer is backward-compatible with plain PPO.
+- `compute_cost_advantages` raises `RuntimeError` if called without `store_costs=True` to catch integration errors early.
+- `get_minibatches` conditionally includes cost fields: no schema change needed for PPO code paths.
+
+`cppo_lagrangian.py`:
+- `CPPOLagrangianAgent.__init__` calls `super().__init__()` first (sets actor, critic, log_std, temporary optimizer), then creates `cost_critic`, then **replaces** `self.optimizer` with a new Adam covering all four param groups. This ensures LR annealing (which iterates over `optimizer.param_groups`) covers the cost critic uniformly.
+- Cost policy loss sign: `pg_c1 = cadv_t * ratio` and combined loss adds `+λ * cost_policy_loss`. This pushes the policy to reduce probability mass on actions with high cost advantages — correct for penalising unsafe behaviour.
+- Lambda update is deferred to after all gradient epochs per rollout (not per minibatch) to match the dual ascent interpretation: one outer-loop step per rollout.
+
+`scripts/train_cppo.py`:
+- Config default path resolved relative to `__file__` (same convention as `train_ppo.py`) to be CWD-independent.
+- `avg_episode_cost` computation uses completed episode totals when available, falling back to `buffer.costs.mean()` — important for early training when episodes may not terminate within a single rollout.
+
+**What failed:** Nothing in this phase — all logic checks passed analytically in the VM.
+
+**Surprising behaviour:** None.
+
+### Quantitative Notes
+
+- Initial return: not yet measured (smoke test pending on user's machine)
+- Final return: not yet measured
+- Constraint violation rate: not yet measured
+- Lambda behaviour: verified analytically — increases when avg_cost > cost_limit, clamps at 0 when avg_cost < cost_limit, clamps at lambda_max when runaway growth occurs.
+
+### Debugging Notes
+
+- Logic verified with isolated Python 3.10 (no torch) checks in Linux VM:
+  - Cost GAE: verified `cost_advantages[3] = 0` at terminal step, positive advantages propagate backward correctly.
+  - `LagrangianMultiplier`: verified increase, zero-clamp, and lambda_max clamp cases.
+  - `cost_action_magnitude`: verified indicator logic with high and low action magnitudes.
+  - `cost_torso_angle`: verified indicator logic with safe and unsafe obs[1] values.
+- All 6 modified files pass `py_compile` syntax check.
+- Smoke test requires the macOS venv (torch 2.10.0, gymnasium 1.2.3, mujoco 3.5.0); cannot be run inside the Linux VM.
+- Expected smoke test execution time: < 60 s on CPU (4 096 env steps + 2 C-PPO updates + 2 evals × 10 episodes each).
+
+### Limitations Noted
+
+- Cost functions are binary indicators (0 or 1), which produces high-variance cost advantages. Smooth cost functions (e.g., continuous penalty) would reduce variance but are deferred.
+- The Lagrangian method does not provide CPO's formal safety guarantee (trust-region projection); it is an approximation that can temporarily violate the constraint.
+- Cost GAE uses the same γ and λ as the reward stream; separate hyperparameters could improve cost-critic accuracy but are not explored here.
+- Single-seed evaluation only; cross-seed variance not characterised.
+- CPU-only development environment; no GPU determinism flags.
+
+---

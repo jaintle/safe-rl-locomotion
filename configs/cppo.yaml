@@ -1,0 +1,57 @@
+# configs/cppo.yaml
+# =================
+# Safety-constrained PPO (Lagrangian) hyperparameters.
+#
+# Inherits all PPO settings and adds safety-specific parameters.
+# CLI flags in train_cppo.py take precedence over these values.
+
+# --- Environment ---
+env_id: "Hopper-v4"
+seed: 0
+
+# --- Training schedule ---
+total_timesteps: 1_000_000
+eval_every: 10_000
+save_dir: "runs/cppo_default"
+
+# --- Rollout collection ---
+n_steps: 2048
+n_envs: 1
+
+# --- PPO update (same as baseline) ---
+n_epochs: 10
+batch_size: 64
+clip_coef: 0.2
+vf_coef: 0.5
+ent_coef: 0.0
+max_grad_norm: 0.5
+
+# --- Advantage estimation ---
+gamma: 0.99
+gae_lambda: 0.95
+
+# --- Optimiser ---
+lr: 3.0e-4
+lr_anneal: true
+
+# --- Network architecture ---
+hidden_sizes: [64, 64]
+activation: "tanh"
+
+# --- Evaluation ---
+eval_episodes: 10
+eval_seed: 1000
+deterministic_eval: true
+
+# --- Safety constraint ---
+cost_limit: 0.1             # d: constraint is E[cost_per_episode] <= cost_limit
+cost_fn: "action_magnitude" # cost function: "action_magnitude" or "torso_angle"
+
+# Cost function parameters
+cost_action_magnitude_threshold: 0.8   # threshold for action_magnitude cost
+cost_torso_angle_threshold: 0.2        # threshold for torso_angle cost (radians)
+
+# --- Lagrangian dual update ---
+lambda_init: 0.0            # initial value of the Lagrange multiplier lambda
+lr_lambda: 1.0e-2           # step size for the dual ascent update
+lambda_max: 10.0            # optional clamp to prevent instability (not in basic spec)

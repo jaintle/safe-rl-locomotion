@@ -1,0 +1,47 @@
+# configs/ppo.yaml
+# ================
+# Baseline PPO hyperparameters.
+#
+# CLI flags in train_ppo.py take precedence over these values.
+# All values are intentionally kept close to the CleanRL defaults for
+# MuJoCo continuous-control tasks to aid reproducibility.
+#
+# Reference: https://github.com/vwxyzjn/cleanrl (MIT License)
+
+# --- Environment ---
+env_id: "Hopper-v4"
+seed: 0
+
+# --- Training schedule ---
+total_timesteps: 1_000_000
+eval_every: 10_000          # env steps between evaluation calls
+save_dir: "runs/ppo_default"
+
+# --- Rollout collection ---
+n_steps: 2048               # steps per rollout before an update
+n_envs: 1                   # number of parallel environments (phase 2+)
+
+# --- PPO update ---
+n_epochs: 10                # gradient update epochs per rollout
+batch_size: 64              # minibatch size
+clip_coef: 0.2              # PPO clipping epsilon
+vf_coef: 0.5                # value function loss coefficient
+ent_coef: 0.0               # entropy bonus coefficient
+max_grad_norm: 0.5          # gradient clipping threshold
+
+# --- Advantage estimation ---
+gamma: 0.99                 # discount factor
+gae_lambda: 0.95            # GAE lambda
+
+# --- Optimiser ---
+lr: 3.0e-4                  # Adam learning rate
+lr_anneal: true             # anneal lr linearly to 0 over training
+
+# --- Network architecture ---
+hidden_sizes: [64, 64]      # hidden layer widths for actor and critic
+activation: "tanh"          # activation function ("tanh" or "relu")
+
+# --- Evaluation ---
+eval_episodes: 10           # episodes per evaluation call
+eval_seed: 1000             # base seed for evaluation episodes
+deterministic_eval: true    # use mean action (no sampling noise) at eval

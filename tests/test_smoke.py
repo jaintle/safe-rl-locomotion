@@ -14,9 +14,9 @@ These tests are intentionally lightweight — they exercise the full
 training pipeline but do not check learning quality.
 
 Status:
-    - test_smoke_env: ACTIVE (uses existing scripts/smoke_env.py).
-    - test_ppo_smoke_train: STUB (training loop not yet implemented).
-    - test_cppo_smoke_train: STUB (training loop not yet implemented).
+    - test_smoke_env: ACTIVE.
+    - test_ppo_smoke_train: ACTIVE (Phase 2 — PPO implemented).
+    - test_cppo_smoke_train: STUB (Phase 3 — C-PPO not yet implemented).
 """
 
 from __future__ import annotations
@@ -63,7 +63,6 @@ def test_smoke_env() -> None:
 # 2. PPO smoke train (stub — will be enabled once training loop exists)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="PPO training loop not yet implemented (scaffold phase).")
 def test_ppo_smoke_train(tmp_path: pathlib.Path) -> None:
     """
     Train PPO for 5 000 steps and verify artefacts are written.

@@ -9,3 +9,5 @@ shared utilities so that scripts can do simple package-level imports.
 Nothing is instantiated at import time; all heavy objects (networks, envs)
 are constructed inside the training scripts.
 """
+
+__version__ = "1.0.0"

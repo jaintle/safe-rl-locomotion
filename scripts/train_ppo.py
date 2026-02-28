@@ -53,11 +53,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 import gymnasium as gym
 import yaml
 
-from robot_safe_ppo.ppo import PPOAgent
-from robot_safe_ppo.buffers import RolloutBuffer
-from robot_safe_ppo.cppo_lagrangian import get_cost_fn
-from robot_safe_ppo.utils import set_seeds, load_config, MetricLogger, save_checkpoint
-from robot_safe_ppo.eval import evaluate_policy
+from safe_rl_locomotion.ppo import PPOAgent
+from safe_rl_locomotion.buffers import RolloutBuffer
+from safe_rl_locomotion.cppo_lagrangian import get_cost_fn
+from safe_rl_locomotion.utils import set_seeds, load_config, MetricLogger, save_checkpoint
+from safe_rl_locomotion.eval import evaluate_policy
 
 
 # ---------------------------------------------------------------------------

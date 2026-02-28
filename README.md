@@ -62,12 +62,18 @@ These findings are consistent with the theoretical predictions of the Lagrangian
 
 ```bash
 git clone <repo-url>
-cd robot-safe-ppo
+cd safe-rl-locomotion
 
 python3.11 -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
+
+# Optional: install the package itself in editable mode so
+# `import safe_rl_locomotion` works without PYTHONPATH manipulation.
+# The training scripts insert src/ into sys.path automatically,
+# so this step is only needed for interactive use or external tooling.
+pip install -e .
 ```
 
 ### Verify Installation
@@ -199,7 +205,7 @@ Cost limit: 80.0. Feasibility assessed at final checkpoint.
 ## Repository Structure
 
 ```
-robot-safe-ppo/
+safe-rl-locomotion/
 ├── configs/
 │   ├── ppo.yaml                         # PPO hyperparameters
 │   └── cppo.yaml                        # C-PPO hyperparameters and safety parameters
@@ -219,7 +225,7 @@ robot-safe-ppo/
 │   ├── reproduce_hopper_v4_500k.sh      # Full 500k benchmark (3 seeds, PPO + C-PPO)
 │   └── reproduce_hopper_v4_1m.sh        # Full 1M benchmark (3 seeds, PPO + C-PPO)
 ├── src/
-│   └── robot_safe_ppo/
+│   └── safe_rl_locomotion/
 │       ├── ppo.py                       # PPO agent
 │       ├── cppo_lagrangian.py           # C-PPO agent, cost functions, Lagrangian multiplier
 │       ├── buffers.py                   # Rollout buffer with dual GAE (reward + cost)
@@ -231,6 +237,8 @@ robot-safe-ppo/
 │   ├── test_determinism.py              # Same-seed reproducibility check (ATOL = 5.0)
 │   └── test_learning_regression.py      # 50k-step learning regression (marked slow)
 ├── requirements.txt                     # Pinned dependencies
+├── setup.py                             # Legacy editable install support (pip install -e .)
+├── pyproject.toml                       # PEP 517 build configuration
 └── README.md
 ```
 

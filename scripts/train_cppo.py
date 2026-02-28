@@ -49,14 +49,14 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 import gymnasium as gym
 import yaml
 
-from robot_safe_ppo.cppo_lagrangian import (
+from safe_rl_locomotion.cppo_lagrangian import (
     CPPOLagrangianAgent,
     _save_cppo_checkpoint,
     get_cost_fn,
 )
-from robot_safe_ppo.buffers import RolloutBuffer
-from robot_safe_ppo.utils import set_seeds, load_config, MetricLogger
-from robot_safe_ppo.eval import evaluate_policy
+from safe_rl_locomotion.buffers import RolloutBuffer
+from safe_rl_locomotion.utils import set_seeds, load_config, MetricLogger
+from safe_rl_locomotion.eval import evaluate_policy
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-# Experiment Log — Robot-Safe PPO
+# Experiment Log — Safe-RL Locomotion
 
 Structured log of all implementation steps and experiment runs.
 Each entry is appended in chronological order.
@@ -17,7 +17,7 @@ Used as the primary source for drafting the final technical report.
 ### Observations
 
 **What was done:**
-- Created full directory layout: `src/robot_safe_ppo/`, `scripts/`, `configs/`, `tests/`, `reports/`.
+- Created full directory layout: `src/safe_rl_locomotion/`, `scripts/`, `configs/`, `tests/`, `reports/`.
 - Wrote stub implementations with docstrings for all six source modules:
   `ppo.py`, `cppo_lagrangian.py`, `buffers.py`, `utils.py`, `eval.py`, `plotting.py`.
 - Created training entry-point scripts with fully functional CLI parsers
@@ -294,7 +294,7 @@ Phase 4 — Reproducibility gates:
 
 Phase 5 — Plots and packaging:
 
-`src/robot_safe_ppo/plotting.py` — fully implemented (replaced all stubs):
+`src/safe_rl_locomotion/plotting.py` — fully implemented (replaced all stubs):
 - 4 public functions: `plot_returns`, `plot_costs`, `plot_lambda`, `plot_losses`.
 - 1 comparison function: `plot_comparison` (2-subplot PPO vs C-PPO).
 - All plots: matplotlib Agg backend (headless-safe), 150 dpi PNG, tight layout.
@@ -367,7 +367,7 @@ Phase 5 — Plots and packaging:
 **What was done:**
 
 `scripts/train_ppo.py`:
-- Imported `get_cost_fn` from `robot_safe_ppo.cppo_lagrangian`.
+- Imported `get_cost_fn` from `safe_rl_locomotion.cppo_lagrangian`.
 - Added `eval_cost_mean` and `eval_cost_std` to `CSV_FIELDNAMES` (positions 6–7, after `eval_return_std`).
 - Built `cost_fn = get_cost_fn(cfg.get("cost_fn", "action_magnitude"), cfg)` before the training loop (cost function initialised once, re-used at every eval).
 - Changed `evaluate_policy(...)` call to pass `compute_cost=True, cost_fn=cost_fn`.

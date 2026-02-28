@@ -50,8 +50,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from robot_safe_ppo.ppo import PPOAgent
-from robot_safe_ppo.utils import make_mlp
+from safe_rl_locomotion.ppo import PPOAgent
+from safe_rl_locomotion.utils import make_mlp
 
 
 # ---------------------------------------------------------------------------

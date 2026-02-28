@@ -35,7 +35,7 @@ ENV_ID="Hopper-v4"
 TAG="1m"
 
 echo "========================================================"
-echo " Robot-Safe PPO — Hopper-v4 benchmark (${BUDGET} steps)"
+echo " Safe RL Locomotion — Hopper-v4 benchmark (${BUDGET} steps)"
 echo " cost_fn=${COST_FN}  threshold=${THRESHOLD}  cost_limit=${COST_LIMIT}"
 echo " Seeds: ${SEEDS[*]}"
 echo "========================================================"

@@ -1,4 +1,4 @@
-# Robot-Safe PPO: Technical Report
+# Safe RL Locomotion: Technical Report
 
 **Date:** 2026-02-28
 **Status:** Implementation complete; full training results pending.

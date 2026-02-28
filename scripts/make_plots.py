@@ -4,7 +4,7 @@ make_plots.py
 Generate training-curve plots from saved metrics.csv files.
 
 Reads one or more metrics.csv files produced during training and calls the
-functions in robot_safe_ppo.plotting to produce PNG figures.
+functions in safe_rl_locomotion.plotting to produce PNG figures.
 
 Usage examples::
 
@@ -51,7 +51,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "src"))
 
 import pandas as pd
 
-from robot_safe_ppo.plotting import (
+from safe_rl_locomotion.plotting import (
     plot_returns,
     plot_costs,
     plot_lambda,

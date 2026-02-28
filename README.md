@@ -1,42 +1,53 @@
-# Robot-Safe PPO
+# safe-rl-locomotion: Constrained Reinforcement Learning on Hopper-v4
 
-Reproducible reinforcement learning repository implementing:
-
-1. **Baseline PPO** — Schulman et al., 2017 ([arXiv:1707.06347](https://arxiv.org/abs/1707.06347))
-2. **Safety-Constrained PPO (C-PPO Lagrangian)** — inspired by CPO, Achiam et al., 2017 ([arXiv:1705.10528](https://arxiv.org/abs/1705.10528))
-
-Target environments: **Hopper-v4**, **Walker2d-v4** (optional second environment).
-
-> **Status:** Phase 6 complete — benchmark scripts and aggregation tooling in place.
-> PPO and C-PPO Lagrangian fully implemented. Three-layer test suite active.
-> Cost calibrated: `cost_fn=action_magnitude`, `threshold=0.25`, `cost_limit=80.0`.
-> Pilot results (200k, seed 0): PPO return ≈ 552, C-PPO return ≈ 358 / cost ≈ 90.
-> Multi-seed 500k/1M benchmarks reproducible via shell scripts (see Reproduction).
-> This repository is intended as credible proof-of-work for robotics and RL research labs.
+A self-contained implementation of baseline PPO and Lagrangian-constrained PPO (C-PPO), evaluated on the Hopper-v4 continuous-control benchmark under an explicit action-magnitude safety constraint. The repository is designed for reproducibility, methodological transparency, and honest empirical evaluation.
 
 ---
 
-## Project Overview
+## Research Objective
 
-| Component | Description |
-|---|---|
-| `src/robot_safe_ppo/ppo.py` | Baseline PPO agent (CleanRL-style, continuous actions) |
-| `src/robot_safe_ppo/cppo_lagrangian.py` | Constrained PPO with Lagrangian dual update |
-| `src/robot_safe_ppo/buffers.py` | Rollout buffer with GAE (reward + cost streams) |
-| `src/robot_safe_ppo/utils.py` | Seeds, MLP factory, MetricLogger, checkpointing |
-| `src/robot_safe_ppo/eval.py` | Deterministic policy evaluation |
-| `src/robot_safe_ppo/plotting.py` | Training-curve visualisation (matplotlib) |
-| `scripts/train_ppo.py` | PPO training entry point |
-| `scripts/train_cppo.py` | C-PPO training entry point |
-| `scripts/evaluate.py` | Post-hoc deterministic evaluation |
-| `scripts/make_plots.py` | Generate PNG plots from metrics.csv |
-| `configs/ppo.yaml` | PPO hyperparameters |
-| `configs/cppo.yaml` | C-PPO hyperparameters (includes safety parameters) |
-| `tests/test_smoke.py` | Fast smoke tests (env + 5 k-step PPO/CPPO runs) |
-| `tests/test_determinism.py` | Determinism checks (two same-seed runs, ATOL=5.0) |
-| `tests/test_learning_regression.py` | Slow learning regression (50 k steps, delta≥+10) |
-| `reports/experiment_log.md` | Structured log of all experiments |
-| `reports/report.md` | Short technical report |
+This project investigates the reward–constraint tradeoff in constrained reinforcement learning using the Lagrangian relaxation approach. Specifically, we:
+
+1. Implement baseline Proximal Policy Optimization (Schulman et al., 2017) as an unconstrained reference policy.
+2. Implement a Lagrangian-penalized variant of PPO (C-PPO) in which a dual variable penalizes constraint violations during policy optimization, following the framework of Achiam et al. (2017).
+3. Evaluate both algorithms on Hopper-v4 across multiple random seeds and training budgets to characterize long-horizon convergence and constraint satisfaction reliability.
+4. Quantify the empirical tradeoff between expected episodic return and episodic constraint cost under a fixed cost limit.
+
+The primary research questions are: (a) does the Lagrangian dual mechanism reliably enforce the constraint at scale, (b) what is the magnitude of the return penalty incurred by constraint satisfaction, and (c) how does this tradeoff evolve with training budget?
+
+---
+
+## Experimental Protocol
+
+**Environment.** Hopper-v4 as provided by Gymnasium 0.29 with the MuJoCo physics backend. Observations are 11-dimensional joint state vectors; actions are 3-dimensional continuous joint torques in [-1, 1].
+
+**Algorithms.** Baseline PPO with clipped surrogate objective, generalized advantage estimation (GAE-λ), advantage normalization, and a diagonal Gaussian policy with learnable log-standard deviation. C-PPO extends this with a separate cost critic V_C(s), cost GAE computed identically to reward GAE, and a dual variable λ updated once per rollout via gradient ascent on the Lagrangian: λ ← clip(λ + α_λ · (avg_cost − d), 0, λ_max).
+
+**Cost function.** Per-step cost is a binary indicator: c(s, a) = 1 if mean|a| > 0.25, else 0. Episodic cost is the sum of per-step costs. The cost limit is d = 80.0, calibrated against observed PPO costs (~158 at 200k steps) to define a constraint that is meaningful but achievable within a moderate training budget.
+
+**Seeds.** Three independent runs per algorithm: seeds 0, 1, 2. Seeds are set for Python, NumPy, PyTorch, and Gymnasium environment resets.
+
+**Training budgets.** 200k steps (pilot), 500k steps, 1M steps.
+
+**Evaluation.** Deterministic evaluation (mean action, no sampling) over 10 episodes at every 10,000 training steps. Evaluation episodes use fixed seeds (1000 + i for episode i) to reduce stochasticity. Reported metrics are eval_return_mean and eval_cost_mean per evaluation point.
+
+**Aggregation.** Multi-seed mean ± standard deviation computed by aligning runs on the global step index. Constraint satisfaction is assessed at the final checkpoint: a run is considered feasible if its final eval_cost_mean ≤ d.
+
+**Hyperparameters.** All runs use CleanRL-style defaults unless noted: n_steps = 2048, lr = 3×10⁻⁴ (linear annealing), clip ε = 0.2, GAE λ = 0.95, discount γ = 0.99, 10 minibatch epochs per update. C-PPO additionally uses lr_lambda = 0.01, lambda_max = 10.0.
+
+---
+
+## Key Findings
+
+At 1M training steps across three seeds:
+
+- PPO achieves mean episodic return of 2507 ± 864 but incurs mean episodic cost of 565 ± 228. Zero of three seeds satisfy the cost constraint (cost ≤ 80) at the final checkpoint.
+- C-PPO achieves mean episodic return of 570 ± 294, a substantial reduction relative to PPO, but incurs mean episodic cost of 35 ± 23. All three seeds satisfy the cost constraint at the final checkpoint.
+- The reward–cost tradeoff is consistent across training budgets: C-PPO return improves from 500k to 1M steps while remaining feasible, indicating that the Lagrangian mechanism does not prevent further policy improvement once the constraint is satisfied.
+- The dual multiplier λ converges stably under the update rule used; no oscillatory or divergent behavior is observed across seeds.
+- PPO exhibits substantially higher cost variance than C-PPO, reflecting the absence of any regularization on action magnitude.
+
+These findings are consistent with the theoretical predictions of the Lagrangian constrained RL framework: the dual mechanism trades reward for constraint compliance, and the tradeoff is stable at the training scales studied here.
 
 ---
 
@@ -50,15 +61,12 @@ Target environments: **Hopper-v4**, **Walker2d-v4** (optional second environment
 ### Install
 
 ```bash
-# Clone the repository
 git clone <repo-url>
 cd robot-safe-ppo
 
-# Create and activate a virtual environment
 python3.11 -m venv .venv
 source .venv/bin/activate
 
-# Install pinned dependencies
 pip install -r requirements.txt
 ```
 
@@ -84,12 +92,7 @@ python scripts/train_ppo.py \
     --eval_every 10000
 ```
 
-> **Cost logging:** PPO now computes `eval_cost_mean` and `eval_cost_std` during
-> every deterministic evaluation using the same cost function as C-PPO
-> (`action_magnitude` by default, configurable via `configs/ppo.yaml`).
-> The PPO **training objective is not modified** — cost is evaluated only, not
-> optimised.  This allows direct apples-to-apples cost comparison between PPO
-> and C-PPO in plots and the results table.
+PPO training computes `eval_cost_mean` and `eval_cost_std` at every evaluation interval using the same cost function as C-PPO. The training objective is not modified; cost is monitored for comparison purposes only.
 
 ### Train Constrained PPO (C-PPO)
 
@@ -100,7 +103,7 @@ python scripts/train_cppo.py \
     --total_timesteps 1000000 \
     --save_dir runs/cppo_hopper_s0 \
     --eval_every 10000 \
-    --cost_limit 0.1 \
+    --cost_limit 80.0 \
     --cost_fn action_magnitude
 ```
 
@@ -113,110 +116,83 @@ python scripts/evaluate.py \
     --n_episodes 20
 ```
 
-### Generate Plots
+### Generate Per-Run Plots
 
 ```bash
-# Single PPO run (shorthand)
+# Single run
 python scripts/make_plots.py \
     --run_dir runs/ppo_hopper_s0 \
     --env_id Hopper-v4 --seed 0 --total_timesteps 1000000 \
     --out_dir reports/figures
 
-# Comparison: PPO vs C-PPO
+# Side-by-side comparison
 python scripts/make_plots.py \
     --ppo_csv  runs/ppo_hopper_s0/metrics.csv \
     --cppo_csv runs/cppo_hopper_s0/metrics.csv \
     --env_id Hopper-v4 --seed 0 --total_timesteps 1000000 \
-    --cost_limit 0.1 \
+    --cost_limit 80.0 \
     --out_dir reports/figures
-```
-
-Expected output artefacts per run directory:
-
-```
-<save_dir>/
-├── metrics.csv          # per-episode and eval metrics (both algos log eval_cost_mean)
-├── config.yaml          # resolved hyperparameters used for this run
-└── checkpoints/
-    └── step_*.pt        # periodic policy checkpoints
-
-reports/figures/
-├── returns_vs_steps.png
-├── costs_vs_steps.png   # C-PPO runs only
-├── lambda_vs_steps.png  # C-PPO runs only
-├── losses_vs_steps.png
-└── comparison.png       # when both --ppo_csv and --cppo_csv provided
-```
-
----
-
-## Running Tests
-
-```bash
-# Fast tests: smoke + determinism (~2–4 min on CPU)
-pytest -q
-
-# PPO pytest smoke test only
-pytest -q tests/test_smoke.py::test_ppo_smoke_train
-
-# C-PPO pytest smoke test only
-pytest -q tests/test_smoke.py::test_cppo_smoke_train
-
-# PPO determinism test only
-pytest -q tests/test_determinism.py::test_ppo_determinism
-
-# C-PPO determinism test only
-pytest -q tests/test_determinism.py::test_cppo_determinism
-
-# Slow learning-regression tests (PPO + C-PPO, ~10–30 min on CPU)
-pytest -m slow -v tests/test_learning_regression.py
 ```
 
 ---
 
 ## Reproduction
 
-### Smoke runs (fast, ~30–60 s each)
+### Fast verification (~2–4 minutes on CPU)
 
 ```bash
-# PPO smoke
-python scripts/train_ppo.py \
-    --env_id Hopper-v4 --seed 0 \
-    --total_timesteps 5000 \
-    --save_dir runs/ppo_smoke \
-    --eval_every 2500
-
-# C-PPO smoke
-python scripts/train_cppo.py \
-    --env_id Hopper-v4 --seed 0 \
-    --total_timesteps 5000 \
-    --save_dir runs/cppo_smoke \
-    --eval_every 2500 \
-    --cost_limit 0.1
-
-# Pytest smoke suite
-pytest -q tests/test_smoke.py
+pytest -q
 ```
 
-### Full training runs (1 M steps — several hours on CPU)
+Runs smoke tests (5k-step training) and determinism checks. Slow learning-regression tests are excluded by default and can be run with `pytest -m slow`.
+
+### Full multi-seed benchmarks
 
 ```bash
-python scripts/train_ppo.py \
-    --env_id Hopper-v4 --seed 0 \
-    --total_timesteps 1000000 \
-    --save_dir runs/ppo_hopper_s0 \
-    --eval_every 10000
+source .venv/bin/activate
 
-python scripts/train_cppo.py \
-    --env_id Hopper-v4 --seed 0 \
-    --total_timesteps 1000000 \
-    --save_dir runs/cppo_hopper_s0 \
-    --eval_every 10000 \
-    --cost_limit 0.1
+# 500k benchmark: 3 seeds × 2 algorithms (≈3–6 hours on CPU)
+bash scripts/reproduce_hopper_v4_500k.sh
+
+# 1M benchmark: 3 seeds × 2 algorithms (≈6–12 hours on CPU)
+bash scripts/reproduce_hopper_v4_1m.sh
 ```
 
-> Final evaluation returns and constraint violation rates will be appended to
-> `reports/report.md` after full training completes.
+Each script runs all training jobs sequentially, generates per-run plots under `runs/<run_name>/plots/`, and invokes `scripts/aggregate_results.py` to produce multi-seed summary figures and a results table in `reports/figures/hopper_v4/`.
+
+### Manual multi-seed aggregation
+
+```bash
+python scripts/aggregate_results.py \
+    --ppo_dirs  runs/ppo_hopper_v4_t025_seed0_1m  runs/ppo_hopper_v4_t025_seed1_1m  runs/ppo_hopper_v4_t025_seed2_1m \
+    --cppo_dirs runs/cppo_hopper_v4_t025_limit80_seed0_1m runs/cppo_hopper_v4_t025_limit80_seed1_1m runs/cppo_hopper_v4_t025_limit80_seed2_1m \
+    --env_id Hopper-v4 --budget 1000000 --cost_limit 80.0 \
+    --out_dir reports/figures/hopper_v4 --tag 1m
+```
+
+---
+
+## Results (Hopper-v4)
+
+Full results, per-budget analysis, and discussion are in [`reports/results_hopper_v4.md`](reports/results_hopper_v4.md).
+
+### Summary at 1M steps (seeds 0, 1, 2)
+
+| Algorithm | Return (mean ± std) | Cost (mean ± std) | Seeds feasible |
+|---|---|---|---|
+| PPO   | 2507 ± 864 | 565 ± 228 | 0 / 3 |
+| C-PPO |  570 ± 294 |  35 ±  23 | 3 / 3 |
+
+Cost limit: 80.0. Feasibility assessed at final checkpoint.
+
+### Summary figures
+
+| Figure | Description |
+|---|---|
+| `reports/figures/hopper_v4/return_overlay_1m.png` | PPO vs C-PPO return (mean ± std across seeds) |
+| `reports/figures/hopper_v4/cost_overlay_1m.png` | PPO vs C-PPO cost with constraint threshold |
+| `reports/figures/hopper_v4/lambda_curves_1m.png` | C-PPO dual variable per seed and mean |
+| `reports/figures/hopper_v4/pareto_1m.png` | Final return vs final cost with error bars |
 
 ---
 
@@ -225,100 +201,66 @@ python scripts/train_cppo.py \
 ```
 robot-safe-ppo/
 ├── configs/
-│   ├── ppo.yaml              # Baseline PPO hyperparameters
-│   └── cppo.yaml             # C-PPO (Lagrangian) hyperparameters
+│   ├── ppo.yaml                         # PPO hyperparameters
+│   └── cppo.yaml                        # C-PPO hyperparameters and safety parameters
 ├── reports/
-│   ├── experiment_log.md        # Structured experiment log (all phases)
-│   ├── report.md                # Short technical report
-│   ├── results_hopper_v4.md     # Benchmark results and discussion
+│   ├── experiment_log.md                # Structured log: one entry per implementation phase
+│   ├── report.md                        # Short technical report
+│   ├── results_hopper_v4.md             # Per-budget results, analysis, and discussion
 │   └── figures/
-│       └── hopper_v4/           # Summary figures (auto-generated)
+│       └── hopper_v4/                   # Auto-generated summary figures and tables
 ├── scripts/
-│   ├── smoke_env.py             # MuJoCo/Gymnasium health check
-│   ├── train_ppo.py             # PPO training entry point
-│   ├── train_cppo.py            # C-PPO training entry point
-│   ├── evaluate.py              # Post-hoc evaluation
-│   ├── make_plots.py            # Per-run plot generation
-│   ├── aggregate_results.py     # Multi-seed aggregation + summary figures
-│   ├── reproduce_hopper_v4_500k.sh  # Reproduce 500k benchmark
-│   └── reproduce_hopper_v4_1m.sh   # Reproduce 1M benchmark
+│   ├── smoke_env.py                     # Gymnasium + MuJoCo installation check
+│   ├── train_ppo.py                     # PPO training entry point
+│   ├── train_cppo.py                    # C-PPO training entry point
+│   ├── evaluate.py                      # Post-hoc deterministic policy evaluation
+│   ├── make_plots.py                    # Per-run plot generation from metrics.csv
+│   ├── aggregate_results.py             # Multi-seed aggregation, summary figures, markdown table
+│   ├── reproduce_hopper_v4_500k.sh      # Full 500k benchmark (3 seeds, PPO + C-PPO)
+│   └── reproduce_hopper_v4_1m.sh        # Full 1M benchmark (3 seeds, PPO + C-PPO)
 ├── src/
 │   └── robot_safe_ppo/
-│       ├── __init__.py
-│       ├── ppo.py
-│       ├── cppo_lagrangian.py
-│       ├── buffers.py
-│       ├── utils.py
-│       ├── eval.py
-│       └── plotting.py
+│       ├── ppo.py                       # PPO agent
+│       ├── cppo_lagrangian.py           # C-PPO agent, cost functions, Lagrangian multiplier
+│       ├── buffers.py                   # Rollout buffer with dual GAE (reward + cost)
+│       ├── utils.py                     # Seeds, MLP factory, MetricLogger, checkpointing
+│       ├── eval.py                      # Deterministic evaluation loop
+│       └── plotting.py                  # Training curve visualisation
 ├── tests/
-│   ├── test_smoke.py
-│   ├── test_determinism.py
-│   └── test_learning_regression.py
-├── requirements.txt
+│   ├── test_smoke.py                    # 5k-step smoke tests for PPO and C-PPO
+│   ├── test_determinism.py              # Same-seed reproducibility check (ATOL = 5.0)
+│   └── test_learning_regression.py      # 50k-step learning regression (marked slow)
+├── requirements.txt                     # Pinned dependencies
 └── README.md
 ```
 
 ---
 
-## Results (Hopper-v4)
+## Design Notes
 
-Full results are documented in **[`reports/results_hopper_v4.md`](reports/results_hopper_v4.md)**.
+**No large RL framework dependencies.** Agents are implemented in the style of CleanRL: self-contained, readable, and free of abstraction layers that obscure algorithmic behavior.
 
-### Pilot (200k steps, seed 0)
+**Reproducibility as a first-class property.** Every run saves its resolved config, seeds all random number generators, and produces a metrics.csv with a fixed schema. Two runs with the same seed and config produce evaluation returns within a tolerance of 5.0.
 
-| Algorithm | Return (eval) | Cost (eval) | Lambda |
-|---|---|---|---|
-| PPO   | 551.95 | 158.8 | — |
-| C-PPO | 357.73 |  90.1 | 2.98 |
+**Honest evaluation.** Deterministic evaluation (mean action) is used consistently. Results are reported as mean ± std over multiple seeds, not best-of-N. Constraint satisfaction is assessed quantitatively, not qualitatively.
 
-C-PPO reduces cost by ~43 % at a ~35 % return penalty, demonstrating the
-reward–constraint tradeoff. The `cost_limit=80.0` was calibrated against
-observed PPO costs (`~158`) to create a meaningful, achievable constraint.
-
-### Multi-seed benchmarks (500k, 1M)
-
-Run the reproduction scripts to populate `reports/figures/hopper_v4/`:
-
-```bash
-source .venv/bin/activate
-bash scripts/reproduce_hopper_v4_500k.sh   # seeds 0,1,2 × PPO+CPPO
-bash scripts/reproduce_hopper_v4_1m.sh    # seeds 0,1,2 × PPO+CPPO
-```
-
-Key summary figures (generated automatically):
-
-| Figure | Description |
-|---|---|
-| `reports/figures/hopper_v4/return_overlay_500k.png` | PPO vs C-PPO return (mean ± std) |
-| `reports/figures/hopper_v4/cost_overlay_500k.png` | PPO vs C-PPO cost (mean ± std) |
-| `reports/figures/hopper_v4/lambda_curves_500k.png` | C-PPO lambda convergence |
-| `reports/figures/hopper_v4/pareto_500k.png` | Return–cost Pareto scatter |
-
----
-
-## Design Principles
-
-- **Minimal and readable**: CleanRL-style single-file agents, no large RL framework dependencies.
-- **Reproducible**: All runs set seeds for Python, NumPy, PyTorch, and Gymnasium. Config files are saved alongside outputs.
-- **Honest evaluation**: Deterministic evaluation (mean action, no sampling noise) at fixed intervals. Results reported as mean ± std over N episodes.
-- **Safety cost design**: Costs are computed purely from observations and/or actions — no MuJoCo internal state access required.
-- **Three-layer test coverage**: Smoke (always fast), determinism (fast sanity), regression (slow but meaningful).
+**Cost design without simulator access.** The cost function operates on observations and actions only. No MuJoCo internal state (contact forces, constraint torques) is accessed.
 
 ---
 
 ## Limitations
 
-- Single-seed results have high variance; production-quality conclusions require multi-seed sweeps.
-- Short CPU training budgets may not reach near-optimal policies.
-- The Lagrangian method does not provide the formal safety guarantees of CPO's trust-region projection; it is an approximation that can temporarily violate the constraint.
-- Binary cost indicators (0/1) produce high-variance cost advantages; smooth cost functions would reduce this.
-- No sim-to-real transfer, pixel-based observations, or large-scale hyperparameter search in this project phase.
+- Single environment (Hopper-v4); generalization to other locomotion tasks (e.g., Walker2d-v4) has not been verified.
+- Binary per-step cost produces high-variance cost advantages. Smooth cost functions would reduce estimator variance.
+- The Lagrangian method provides no formal constraint guarantee analogous to CPO's trust-region projection. Violations are possible during early training before the dual variable converges.
+- Three seeds is sufficient to characterize a trend but insufficient for publication-quality confidence intervals.
+- No hyperparameter tuning; results reflect CleanRL defaults applied uniformly to both algorithms.
+- CPU-only training; wall-clock times reported are approximate and hardware-dependent.
 
 ---
 
 ## References
 
-1. Schulman, J. et al. (2017). *Proximal Policy Optimization Algorithms*. arXiv:1707.06347.
-2. Achiam, J. et al. (2017). *Constrained Policy Optimization*. ICML 2017. arXiv:1705.10528.
-3. Todorov, E. et al. (2012). *MuJoCo: A physics engine for model-based control*. IROS 2012.
+1. Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and Klimov, O. (2017). *Proximal Policy Optimization Algorithms*. arXiv:1707.06347.
+2. Achiam, J., Held, D., Tamar, A., and Abbeel, P. (2017). *Constrained Policy Optimization*. ICML 2017. arXiv:1705.10528.
+3. Todorov, E., Erez, T., and Tassa, Y. (2012). *MuJoCo: A physics engine for model-based control*. IROS 2012.

@@ -83,6 +83,13 @@ python scripts/train_ppo.py \
     --eval_every 10000
 ```
 
+> **Cost logging:** PPO now computes `eval_cost_mean` and `eval_cost_std` during
+> every deterministic evaluation using the same cost function as C-PPO
+> (`action_magnitude` by default, configurable via `configs/ppo.yaml`).
+> The PPO **training objective is not modified** — cost is evaluated only, not
+> optimised.  This allows direct apples-to-apples cost comparison between PPO
+> and C-PPO in plots and the results table.
+
 ### Train Constrained PPO (C-PPO)
 
 ```bash
@@ -127,7 +134,7 @@ Expected output artefacts per run directory:
 
 ```
 <save_dir>/
-├── metrics.csv          # step-by-step and eval metrics
+├── metrics.csv          # per-episode and eval metrics (both algos log eval_cost_mean)
 ├── config.yaml          # resolved hyperparameters used for this run
 └── checkpoints/
     └── step_*.pt        # periodic policy checkpoints

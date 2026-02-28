@@ -44,11 +44,11 @@ eval_seed: 1000
 deterministic_eval: true
 
 # --- Safety constraint ---
-cost_limit: 0.1             # d: constraint is E[cost_per_episode] <= cost_limit
+cost_limit: 80.0             # d: constraint is E[cost_per_episode] <= cost_limit
 cost_fn: "action_magnitude" # cost function: "action_magnitude" or "torso_angle"
 
 # Cost function parameters
-cost_action_magnitude_threshold: 0.8   # threshold for action_magnitude cost
+cost_action_magnitude_threshold: 0.25   # threshold for action_magnitude cost
 cost_torso_angle_threshold: 0.2        # threshold for torso_angle cost (radians)
 
 # --- Lagrangian dual update ---

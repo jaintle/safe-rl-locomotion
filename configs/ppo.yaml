@@ -45,3 +45,10 @@ activation: "tanh"          # activation function ("tanh" or "relu")
 eval_episodes: 10           # episodes per evaluation call
 eval_seed: 1000             # base seed for evaluation episodes
 deterministic_eval: true    # use mean action (no sampling noise) at eval
+
+# --- Cost evaluation (eval-only; does NOT affect the PPO training objective) ---
+# The same cost functions as C-PPO are applied during deterministic evaluation
+# so that PPO and C-PPO eval_cost_mean values are directly comparable.
+cost_fn: "action_magnitude"          # "action_magnitude" or "torso_angle"
+cost_action_magnitude_threshold: 0.25 # threshold for action_magnitude cost
+cost_torso_angle_threshold: 0.2      # threshold for torso_angle cost (radians)

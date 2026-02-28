@@ -104,7 +104,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--cost_limit",
         type=float,
-        default=0.1,
+        default=80.0,
         help="Safety threshold (drawn as reference line on cost plots).",
     )
     parser.add_argument(

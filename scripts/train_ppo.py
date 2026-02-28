@@ -22,12 +22,20 @@ The script:
     6. Saves a copy of the resolved config to <save_dir>/config.yaml.
     7. Runs num_updates = total_timesteps // n_steps rollout-update iterations.
     8. After each rollout, checks whether an eval step threshold was crossed;
-       if so, runs deterministic evaluation and saves a checkpoint.
+       if so, runs deterministic evaluation (with cost logging) and saves a
+       checkpoint.
     9. Closes the logger and prints a completion summary.
+
+Cost evaluation note:
+    The PPO training objective is NOT modified.  A cost function is evaluated
+    during the periodic deterministic evaluation only, so that eval_cost_mean
+    and eval_cost_std can be compared directly against C-PPO runs.  The cost
+    function used is configured via configs/ppo.yaml (cost_fn key, default
+    "action_magnitude") — the same functions available to train_cppo.py.
 
 CSV columns written:
     step, episode_return, episode_length,
-    eval_return_mean, eval_return_std,
+    eval_return_mean, eval_return_std, eval_cost_mean, eval_cost_std,
     policy_loss, value_loss, entropy, approx_kl, clip_fraction
 """
 
@@ -47,12 +55,14 @@ import yaml
 
 from robot_safe_ppo.ppo import PPOAgent
 from robot_safe_ppo.buffers import RolloutBuffer
+from robot_safe_ppo.cppo_lagrangian import get_cost_fn
 from robot_safe_ppo.utils import set_seeds, load_config, MetricLogger, save_checkpoint
 from robot_safe_ppo.eval import evaluate_policy
 
 
 # ---------------------------------------------------------------------------
-# CSV schema — fixed upfront so MetricLogger writes the header immediately
+# CSV schema — fixed upfront so MetricLogger writes the header immediately.
+# eval_cost_mean / eval_cost_std appear on eval rows; nan on episode rows.
 # ---------------------------------------------------------------------------
 CSV_FIELDNAMES = [
     "step",
@@ -60,6 +70,8 @@ CSV_FIELDNAMES = [
     "episode_length",
     "eval_return_mean",
     "eval_return_std",
+    "eval_cost_mean",
+    "eval_cost_std",
     "policy_loss",
     "value_loss",
     "entropy",
@@ -137,7 +149,12 @@ def main() -> None:
     act_dim: int = env.action_space.shape[0]
 
     # ------------------------------------------------------------------
-    # 5. Agent and buffer
+    # 5. Cost function for evaluation only (training objective unchanged)
+    # ------------------------------------------------------------------
+    cost_fn = get_cost_fn(cfg.get("cost_fn", "action_magnitude"), cfg)
+
+    # ------------------------------------------------------------------
+    # 6. Agent and buffer
     # ------------------------------------------------------------------
     agent = PPOAgent(obs_dim, act_dim, cfg)
 
@@ -151,12 +168,12 @@ def main() -> None:
     )
 
     # ------------------------------------------------------------------
-    # 6. Metric logger  (creates metrics.csv on disk immediately)
+    # 7. Metric logger  (creates metrics.csv on disk immediately)
     # ------------------------------------------------------------------
     logger = MetricLogger(save_dir / "metrics.csv", fieldnames=CSV_FIELDNAMES)
 
     # ------------------------------------------------------------------
-    # 7. Training schedule
+    # 8. Training schedule
     # ------------------------------------------------------------------
     num_updates: int = max(1, args.total_timesteps // n_steps)
     lr_init: float = float(cfg.get("lr", 3e-4))
@@ -174,11 +191,12 @@ def main() -> None:
     print(
         f"[train_ppo] env={args.env_id}  seed={args.seed}  "
         f"total_timesteps={args.total_timesteps}  n_steps={n_steps}  "
-        f"num_updates={num_updates}  save_dir={save_dir}"
+        f"num_updates={num_updates}  cost_fn={cfg.get('cost_fn', 'action_magnitude')}  "
+        f"save_dir={save_dir}"
     )
 
     # ------------------------------------------------------------------
-    # 8. Main loop
+    # 9. Main loop
     # ------------------------------------------------------------------
     for _update_idx in range(num_updates):
         buffer.reset()
@@ -204,6 +222,8 @@ def main() -> None:
                         "episode_length": episode_length,
                         "eval_return_mean": float("nan"),
                         "eval_return_std": float("nan"),
+                        "eval_cost_mean": float("nan"),
+                        "eval_cost_std": float("nan"),
                         "policy_loss": float("nan"),
                         "value_loss": float("nan"),
                         "entropy": float("nan"),
@@ -235,6 +255,8 @@ def main() -> None:
                 args.env_id,
                 n_episodes=eval_episodes,
                 eval_seed=eval_seed,
+                compute_cost=True,
+                cost_fn=cost_fn,
             )
 
             logger.log(
@@ -244,6 +266,8 @@ def main() -> None:
                     "episode_length": float("nan"),
                     "eval_return_mean": round(eval_results["eval_return_mean"], 4),
                     "eval_return_std": round(eval_results["eval_return_std"], 4),
+                    "eval_cost_mean": round(eval_results["eval_cost_mean"], 4),
+                    "eval_cost_std": round(eval_results["eval_cost_std"], 4),
                     "policy_loss": round(update_metrics["policy_loss"], 6),
                     "value_loss": round(update_metrics["value_loss"], 6),
                     "entropy": round(update_metrics["entropy"], 6),
@@ -262,6 +286,8 @@ def main() -> None:
                     "env_id": args.env_id,
                     "eval_return_mean": eval_results["eval_return_mean"],
                     "eval_return_std": eval_results["eval_return_std"],
+                    "eval_cost_mean": eval_results["eval_cost_mean"],
+                    "eval_cost_std": eval_results["eval_cost_std"],
                 },
             )
 
@@ -269,13 +295,14 @@ def main() -> None:
                 f"[step {global_step:>8d}/{args.total_timesteps}]  "
                 f"eval_return={eval_results['eval_return_mean']:.1f}"
                 f" \u00b1 {eval_results['eval_return_std']:.1f}  "
+                f"eval_cost={eval_results['eval_cost_mean']:.3f}  "
                 f"ckpt={ckpt_path.name}"
             )
 
             next_eval_step += args.eval_every
 
     # ------------------------------------------------------------------
-    # 9. Finalise
+    # 10. Finalise
     # ------------------------------------------------------------------
     logger.close()
     env.close()

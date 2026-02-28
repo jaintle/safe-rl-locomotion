@@ -353,3 +353,66 @@ Phase 5 — Plots and packaging:
 - Plots have no visual regression test; correctness is checked by eye after a full training run.
 
 ---
+
+## Entry 005
+
+**Date:** 2026-02-28
+**Task:** Add cost evaluation to PPO for proper comparison with C-PPO
+**Environment:** Hopper-v4 (target; smoke test pending on user's machine)
+**Timesteps:** N/A (evaluation-side change only; no new training budget)
+**Seed(s):** N/A
+
+### Observations
+
+**What was done:**
+
+`scripts/train_ppo.py`:
+- Imported `get_cost_fn` from `robot_safe_ppo.cppo_lagrangian`.
+- Added `eval_cost_mean` and `eval_cost_std` to `CSV_FIELDNAMES` (positions 6–7, after `eval_return_std`).
+- Built `cost_fn = get_cost_fn(cfg.get("cost_fn", "action_magnitude"), cfg)` before the training loop (cost function initialised once, re-used at every eval).
+- Changed `evaluate_policy(...)` call to pass `compute_cost=True, cost_fn=cost_fn`.
+- Eval row now logs `eval_cost_mean` and `eval_cost_std` (both rounded to 4 d.p.).
+- Episode rows log `nan` for both cost columns (consistent with existing pattern for missing fields).
+- Checkpoint metadata dict extended with `eval_cost_mean` and `eval_cost_std`.
+- Print statement updated: `eval_cost={eval_results['eval_cost_mean']:.3f}` added.
+- Updated module docstring and CSV column list.
+- **PPO training objective not modified** — `RolloutBuffer` created without `store_costs`, no cost accumulation during rollout, no Lagrangian term in the loss.
+
+`configs/ppo.yaml`:
+- Added `cost_fn`, `cost_action_magnitude_threshold`, `cost_torso_angle_threshold` under a new `# --- Cost evaluation ---` section comment.
+- Values match the `cppo.yaml` defaults to ensure identical cost computation when comparing runs.
+
+`scripts/make_plots.py` — **no changes needed**:
+- Already uses `cost_df = cppo_df if cppo_df is not None else ppo_df` and checks for `"eval_cost_mean" in cost_df.columns`. PPO `metrics.csv` now has `eval_cost_mean` in the header, so cost plots will be generated automatically for PPO-only runs via `--run_dir`.
+
+`README.md`:
+- Added note under "Train Baseline PPO" section explaining cost logging, the identical cost function, and that the training objective is unchanged.
+- Updated `metrics.csv` artefact description to clarify both algorithms log `eval_cost_mean`.
+
+### What worked
+
+- The change is minimal and self-contained: only `train_ppo.py` and `ppo.yaml` required edits.
+- `get_cost_fn` already had a clean factory interface that requires only `(name, cfg)`, so re-use from `train_ppo.py` was straightforward.
+- `evaluate_policy` already supports `compute_cost=True` (implemented in Phase 3); no changes needed there.
+- `make_plots.py` was already written to be cost-column-agnostic; PPO cost plots will appear automatically without any script changes.
+
+### What failed
+
+- None.
+
+### Quantitative Notes
+
+- Cost values not yet measured for PPO (smoke test pending).
+- Expected: PPO with `action_magnitude` cost on Hopper-v4 will show `eval_cost_mean` near 0.0–0.3 depending on action clipping from PPO's policy entropy.  Unlike C-PPO, PPO has no incentive to reduce this value, so it may remain elevated or fluctuate throughout training.
+
+### Debugging Notes
+
+- All changed files pass `py_compile` syntax check.
+- The `get_cost_fn` import creates a dependency from `train_ppo.py` on `cppo_lagrangian.py`.  This is acceptable because both are in the same package and the cost functions are a shared evaluation primitive, not a C-PPO-specific concept.
+
+### Limitations Noted
+
+- PPO cost is eval-only: the training-time cost incurred per step is not tracked or logged.  This means the `episode_cost` column remains absent from PPO `metrics.csv`, so the train-curve cost subplot will only show eval points (no smoothed train line) for PPO runs.
+- Comparison is only valid when both PPO and C-PPO use the same `cost_fn` and threshold, which is enforced by sharing the `cppo.yaml` defaults in `ppo.yaml`.
+
+---

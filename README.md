@@ -1,6 +1,6 @@
 # safe-rl-locomotion: Constrained Reinforcement Learning on Hopper-v4
 
-A self-contained implementation of baseline PPO and Lagrangian-constrained PPO (C-PPO), evaluated on the Hopper-v4 continuous-control benchmark under an explicit action-magnitude safety constraint. The repository is designed for reproducibility, methodological transparency, and honest empirical evaluation.
+This repository presents a controlled empirical study of constrained policy optimization, implementing baseline PPO (Schulman et al., 2017) and a Lagrangian-penalized variant (C-PPO, following Achiam et al., 2017) on the Hopper-v4 continuous-control benchmark. The study is designed around multi-seed evaluation, honest reporting of reward–constraint tradeoffs, and full reproducibility: every run saves its resolved configuration, seeds all random state, and produces a fixed-schema metrics log. All reported results are mean ± standard deviation across three independent seeds; no cherry-picking or best-of-N selection is applied.
 
 ---
 
@@ -14,6 +14,27 @@ This project investigates the reward–constraint tradeoff in constrained reinfo
 4. Quantify the empirical tradeoff between expected episodic return and episodic constraint cost under a fixed cost limit.
 
 The primary research questions are: (a) does the Lagrangian dual mechanism reliably enforce the constraint at scale, (b) what is the magnitude of the return penalty incurred by constraint satisfaction, and (c) how does this tradeoff evolve with training budget?
+
+---
+
+## Empirical Snapshot (Hopper-v4, 1M Steps, 3 Seeds)
+
+| Algorithm | Return (mean ± std) | Cost (mean ± std) | Seeds feasible |
+|-----------|---------------------|-------------------|----------------|
+| PPO       | 2507 ± 864          | 565 ± 228         | 0 / 3          |
+| C-PPO     | 570 ± 294           | 35 ± 23           | 3 / 3          |
+
+<p align="center">
+  <img src="reports/figures/hopper_v4/pareto_1m.png" width="550">
+</p>
+
+*Final return vs final cost (mean ± std across seeds). Dashed line indicates constraint limit (d = 80).*
+
+Baseline PPO maximizes episodic return without any constraint awareness, achieving a mean return of 2507 across three seeds. However, it systematically violates the action-magnitude constraint at every checkpoint, with mean episodic cost of 565 — more than seven times the limit of 80. No seed satisfies the constraint at the final checkpoint.
+
+C-PPO, equipped with a Lagrangian dual variable updated once per rollout, reliably enforces the constraint throughout training. At 1M steps, all three seeds are feasible (mean cost 35, well below the limit of 80), while maintaining a mean episodic return of 570. The dual multiplier converges stably across seeds with no oscillatory or divergent behavior observed.
+
+These results empirically demonstrate that the Lagrangian relaxation mechanism produces a stable and consistent reward–constraint tradeoff under the training conditions studied. The tradeoff is substantial: constraint satisfaction is achieved at a cost of approximately 77% of baseline PPO return. This magnitude is consistent with the tightness of the constraint relative to unconstrained PPO behavior and is reported here without qualification.
 
 ---
 
@@ -256,6 +277,24 @@ safe-rl-locomotion/
 
 ---
 
+## Future Research Directions
+
+This repository is intended as a foundation for further research in safe reinforcement learning for locomotion. Three natural directions for extension are outlined below.
+
+### A. Environment Generalization
+
+The current evaluation is limited to Hopper-v4. Extending to Walker2d-v4 and HalfCheetah-v4 would allow characterization of how the reward–constraint tradeoff varies across locomotion tasks with different morphologies and action dimensionalities. It remains an open empirical question whether the Lagrangian mechanism's convergence properties and the magnitude of the return penalty generalize across these settings, or whether task structure significantly modulates constraint satisfaction rates.
+
+### B. Alternative Safety Formulations
+
+The binary action-magnitude cost used here produces high-variance cost advantages due to its indicator structure. Replacing it with a smooth alternative — such as a squared torque penalty or an energy-based constraint — would reduce gradient variance and may improve constraint satisfaction rates early in training, before the dual variable has converged. A direct comparison to projection-based methods such as CPO (Achiam et al., 2017) would clarify the practical tradeoff between the computational simplicity of Lagrangian relaxation and the formal per-update constraint guarantees of trust-region projection approaches.
+
+### C. Vision-Based Control and Sim-to-Real Transfer
+
+Replacing proprioceptive state observations with pixel inputs introduces a representation learning challenge that is directly relevant to real-world robotics deployment. Pretrained visual encoders could be integrated while keeping the constrained policy optimization objective unchanged, allowing the cost mechanism to operate in representation space rather than raw observation space. Additional considerations for sim-to-real transfer — including domain randomization, partial observability, actuation delays, and contact dynamics mismatch — would constitute a natural extension of the constrained RL framework studied here and are a prerequisite for deployment on physical locomotion hardware.
+
+---
+
 ## Limitations
 
 - Single environment (Hopper-v4); generalization to other locomotion tasks (e.g., Walker2d-v4) has not been verified.
@@ -272,3 +311,19 @@ safe-rl-locomotion/
 1. Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and Klimov, O. (2017). *Proximal Policy Optimization Algorithms*. arXiv:1707.06347.
 2. Achiam, J., Held, D., Tamar, A., and Abbeel, P. (2017). *Constrained Policy Optimization*. ICML 2017. arXiv:1705.10528.
 3. Todorov, E., Erez, T., and Tassa, Y. (2012). *MuJoCo: A physics engine for model-based control*. IROS 2012.
+
+---
+
+## Citation
+
+If this artifact is useful for your research or teaching, please consider citing it:
+
+```bibtex
+@misc{jain2024safe_rl_locomotion,
+  author       = {Abhinav Jain},
+  title        = {safe-rl-locomotion: Reproducible Evaluation of Lagrangian Constrained PPO on Hopper-v4},
+  year         = {2024},
+  howpublished = {\url{https://github.com/jaintle/safe-rl-locomotion}},
+  note         = {Research artifact}
+}
+```

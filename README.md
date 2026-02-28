@@ -7,10 +7,11 @@ Reproducible reinforcement learning repository implementing:
 
 Target environments: **Hopper-v4**, **Walker2d-v4** (optional second environment).
 
-> **Status:** Phases 1–5 complete.
+> **Status:** Phase 6 complete — benchmark scripts and aggregation tooling in place.
 > PPO and C-PPO Lagrangian fully implemented. Three-layer test suite active.
-> Plotting, reporting, and reproducibility packaging in place.
-> Ready for full training runs.
+> Cost calibrated: `cost_fn=action_magnitude`, `threshold=0.25`, `cost_limit=80.0`.
+> Pilot results (200k, seed 0): PPO return ≈ 552, C-PPO return ≈ 358 / cost ≈ 90.
+> Multi-seed 500k/1M benchmarks reproducible via shell scripts (see Reproduction).
 > This repository is intended as credible proof-of-work for robotics and RL research labs.
 
 ---
@@ -227,15 +228,20 @@ robot-safe-ppo/
 │   ├── ppo.yaml              # Baseline PPO hyperparameters
 │   └── cppo.yaml             # C-PPO (Lagrangian) hyperparameters
 ├── reports/
-│   ├── experiment_log.md     # Structured experiment log (all phases)
-│   ├── report.md             # Short technical report
-│   └── figures/              # Generated plots (populated after training)
+│   ├── experiment_log.md        # Structured experiment log (all phases)
+│   ├── report.md                # Short technical report
+│   ├── results_hopper_v4.md     # Benchmark results and discussion
+│   └── figures/
+│       └── hopper_v4/           # Summary figures (auto-generated)
 ├── scripts/
-│   ├── smoke_env.py          # MuJoCo/Gymnasium health check
-│   ├── train_ppo.py          # PPO training entry point
-│   ├── train_cppo.py         # C-PPO training entry point
-│   ├── evaluate.py           # Post-hoc evaluation
-│   └── make_plots.py         # Plot generation
+│   ├── smoke_env.py             # MuJoCo/Gymnasium health check
+│   ├── train_ppo.py             # PPO training entry point
+│   ├── train_cppo.py            # C-PPO training entry point
+│   ├── evaluate.py              # Post-hoc evaluation
+│   ├── make_plots.py            # Per-run plot generation
+│   ├── aggregate_results.py     # Multi-seed aggregation + summary figures
+│   ├── reproduce_hopper_v4_500k.sh  # Reproduce 500k benchmark
+│   └── reproduce_hopper_v4_1m.sh   # Reproduce 1M benchmark
 ├── src/
 │   └── robot_safe_ppo/
 │       ├── __init__.py
@@ -252,6 +258,42 @@ robot-safe-ppo/
 ├── requirements.txt
 └── README.md
 ```
+
+---
+
+## Results (Hopper-v4)
+
+Full results are documented in **[`reports/results_hopper_v4.md`](reports/results_hopper_v4.md)**.
+
+### Pilot (200k steps, seed 0)
+
+| Algorithm | Return (eval) | Cost (eval) | Lambda |
+|---|---|---|---|
+| PPO   | 551.95 | 158.8 | — |
+| C-PPO | 357.73 |  90.1 | 2.98 |
+
+C-PPO reduces cost by ~43 % at a ~35 % return penalty, demonstrating the
+reward–constraint tradeoff. The `cost_limit=80.0` was calibrated against
+observed PPO costs (`~158`) to create a meaningful, achievable constraint.
+
+### Multi-seed benchmarks (500k, 1M)
+
+Run the reproduction scripts to populate `reports/figures/hopper_v4/`:
+
+```bash
+source .venv/bin/activate
+bash scripts/reproduce_hopper_v4_500k.sh   # seeds 0,1,2 × PPO+CPPO
+bash scripts/reproduce_hopper_v4_1m.sh    # seeds 0,1,2 × PPO+CPPO
+```
+
+Key summary figures (generated automatically):
+
+| Figure | Description |
+|---|---|
+| `reports/figures/hopper_v4/return_overlay_500k.png` | PPO vs C-PPO return (mean ± std) |
+| `reports/figures/hopper_v4/cost_overlay_500k.png` | PPO vs C-PPO cost (mean ± std) |
+| `reports/figures/hopper_v4/lambda_curves_500k.png` | C-PPO lambda convergence |
+| `reports/figures/hopper_v4/pareto_500k.png` | Return–cost Pareto scatter |
 
 ---
 

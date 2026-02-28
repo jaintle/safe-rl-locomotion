@@ -416,3 +416,80 @@ Phase 5 — Plots and packaging:
 - Comparison is only valid when both PPO and C-PPO use the same `cost_fn` and threshold, which is enforced by sharing the `cppo.yaml` defaults in `ppo.yaml`.
 
 ---
+
+## Entry 006
+
+**Date:** 2026-02-28
+**Task:** Phase 6 — Benchmark scripts, aggregation utility, and result packaging
+**Environment:** Hopper-v4
+**Timesteps:** 500 000 and 1 000 000 (scripts; runs pending on user's machine)
+**Seed(s):** 0, 1, 2 (per budget)
+
+### Context: Cost Calibration Discovery
+
+Pilot runs at 200k steps (seed 0) revealed a critical scale mismatch:
+
+- `cost_fn=action_magnitude`, `threshold=0.25` → PPO `eval_cost_mean ≈ 158.8`
+- Prior `cost_limit=0.1` caused immediate C-PPO collapse (lambda spiked to `lambda_max`, policy optimised entirely against cost with no reward)
+- Calibrated to `cost_limit=80.0` (~50th percentile of observed PPO costs) — creates a meaningful, achievable constraint
+- `cppo.yaml` and `ppo.yaml` both updated with `threshold=0.25`
+
+Verified 200k pilot (seed 0):
+- PPO:   `eval_return_mean=551.95`, `eval_cost_mean=158.8`
+- C-PPO: `eval_return_mean=357.73`, `eval_cost_mean=90.1`, `lambda_final≈2.98`
+
+Clear reward–cost tradeoff: cost reduced ~43 %, return reduced ~35 %.
+
+### What was done
+
+`scripts/reproduce_hopper_v4_500k.sh` — created:
+- Runs PPO seeds {0,1,2} at 500k steps with `save_dir=runs/ppo_hopper_v4_t025_seed{S}_500k`
+- Runs C-PPO seeds {0,1,2} at 500k steps with `save_dir=runs/cppo_hopper_v4_t025_limit80_seed{S}_500k`
+- Calls `make_plots.py` for each run into `<run_dir>/plots/`
+- Calls `aggregate_results.py` → `reports/figures/hopper_v4/` for summary plots and markdown table
+- `set -euo pipefail` ensures script aborts on first failure
+
+`scripts/reproduce_hopper_v4_1m.sh` — created:
+- Identical structure to 500k script with `BUDGET=1000000` and `TAG=1m`
+- Expected wall time: 6–12 h total on CPU
+
+`scripts/aggregate_results.py` — created:
+- CLI: `--ppo_dirs`, `--cppo_dirs`, `--env_id`, `--budget`, `--cost_limit`, `--out_dir`, `--tag`
+- Loads eval rows from each run's `metrics.csv` via `pd.read_csv` + `pd.to_numeric(errors="coerce")`
+- Aligns series on `step` index using `_align_on_step()` (pivot, sort, NaN for missing steps)
+- Generates 4 plots: `return_overlay_<tag>.png`, `cost_overlay_<tag>.png`, `lambda_curves_<tag>.png`, `pareto_<tag>.png`
+- Writes `summary_<tag>.md` with auto-generated markdown table (mean±std across seeds, constraint satisfied count)
+- Handles missing runs/columns gracefully (prints WARNING, skips)
+- Returns exit code 1 if no valid data found at all
+
+`reports/figures/hopper_v4/` — directory created with `.gitkeep`
+
+`reports/results_hopper_v4.md` — created:
+- Experiment setup table (env, cost_fn, threshold, cost_limit, hyperparameters)
+- Pilot results table (200k, seed 0) with observed values
+- Placeholder tables for 500k and 1M with instructions to paste from `summary_<tag>.md`
+- Figure links table for all 8 expected PNGs (4 per budget)
+- Discussion: reward–cost tradeoff, constraint satisfaction, seed variance, budget effects
+- Limitations: single env, binary cost, no hyperparameter tuning, CPU-only, 3 seeds
+
+`README.md` — updated:
+- Status banner updated to "Phase 6 complete"
+- New "Results (Hopper-v4)" section: pilot table, links to `results_hopper_v4.md`, reproduction commands, key figure paths
+- Repository Structure updated to show new scripts and `reports/figures/hopper_v4/`
+
+### Debugging Notes
+
+- `aggregate_results.py` passes `py_compile` syntax check in Linux VM
+- Shell scripts verified with `bash -n` (syntax check without execution)
+- `_align_on_step()` uses `pd.DataFrame.sort_index()` to handle seed runs with different eval step counts
+- Pareto plot uses `_final_metric()` helper which takes the last non-NaN value per seed; robust to seeds with different numbers of eval rows
+- `SEED_COLORS` list has 3 entries — matches the 3-seed default; cycling via `j % len(SEED_COLORS)` for extensibility
+
+### Limitations Noted
+
+- Actual 500k/1M training runs not yet executed; scripts and docs are ready for the user to run on their machine
+- `aggregate_results.py` requires pandas and matplotlib; both are in `requirements.txt`
+- Shell scripts run jobs sequentially; parallelism (e.g. GNU parallel or tmux sessions) would be needed for faster wall time
+- `summary_<tag>.md` tables need to be manually pasted into `results_hopper_v4.md` after runs complete (or auto-insertion could be added in a future phase)
+
+---

@@ -1,5 +1,6 @@
 # safe-rl-locomotion: Constrained Reinforcement Learning on Hopper-v4
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18818384.svg)](https://doi.org/10.5281/zenodo.18818384)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18818384.svg)](https://doi.org/10.5281/zenodo.18818384) ![CI](https://github.com/jaintle/safe-rl-locomotion/actions/workflows/ci.yml/badge.svg)
+
 
 This repository presents a controlled empirical study of constrained policy optimization, implementing baseline PPO (Schulman et al., 2017) and a Lagrangian-penalized variant (C-PPO, following Achiam et al., 2017) on the Hopper-v4 continuous-control benchmark. The study is designed around multi-seed evaluation, honest reporting of reward–constraint tradeoffs, and full reproducibility: every run saves its resolved configuration, seeds all random state, and produces a fixed-schema metrics log. All reported results are mean ± standard deviation across three independent seeds; no cherry-picking or best-of-N selection is applied.
 
